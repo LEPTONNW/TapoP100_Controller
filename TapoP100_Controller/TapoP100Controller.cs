@@ -28,6 +28,7 @@ internal sealed class TapoP100Controller : IDisposable
     private string? _latestSessionCookie;
     private bool _disposed;
 
+    // 요청마다 사용할 Tapo KLAP v2 컨트롤러를 생성한다.
     public TapoP100Controller(
         string ipAddress,
         string username,
@@ -50,10 +51,13 @@ internal sealed class TapoP100Controller : IDisposable
         };
     }
 
+    // 외부에서 ON 명령을 호출할 수 있게 한다.
     public Task TurnOnAsync(CancellationToken cancellationToken) => SetPowerStateAsync(true, cancellationToken);
 
+    // 외부에서 OFF 명령을 호출할 수 있게 한다.
     public Task TurnOffAsync(CancellationToken cancellationToken) => SetPowerStateAsync(false, cancellationToken);
 
+    // 내부 HttpClient와 락을 정리한다.
     public void Dispose()
     {
         if (_disposed)
@@ -66,6 +70,7 @@ internal sealed class TapoP100Controller : IDisposable
         _lock.Dispose();
     }
 
+    // KLAP v2 핸드셰이크와 암호화 요청을 수행해 실제 전원 상태를 바꾼다.
     private async Task SetPowerStateAsync(bool powerOn, CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -156,6 +161,7 @@ internal sealed class TapoP100Controller : IDisposable
         }
     }
 
+    // 바이너리 KLAP 요청을 보내고 세션 쿠키와 상태 코드를 함께 처리한다.
     private async Task<byte[]> PostBytesAsync(
         string requestUri,
         byte[] payload,
@@ -184,6 +190,7 @@ internal sealed class TapoP100Controller : IDisposable
         return responseBytes;
     }
 
+    // TP_SESSIONID만 수동으로 보내기 위해 Cookie 헤더를 직접 설정한다.
     private static void ApplyCookie(HttpRequestMessage request, string? sessionCookie)
     {
         if (!string.IsNullOrWhiteSpace(sessionCookie))
@@ -192,6 +199,7 @@ internal sealed class TapoP100Controller : IDisposable
         }
     }
 
+    // 응답 Set-Cookie에서 TP_SESSIONID를 추출해 다음 요청에 재사용한다.
     private void CacheSessionCookie(HttpResponseMessage response)
     {
         if (!response.Headers.TryGetValues("Set-Cookie", out IEnumerable<string>? values))
@@ -210,6 +218,7 @@ internal sealed class TapoP100Controller : IDisposable
         }
     }
 
+    // 핸드셰이크 이후 반드시 필요한 세션 쿠키를 반환한다.
     private string ExtractSessionCookie()
     {
         if (string.IsNullOrWhiteSpace(_latestSessionCookie))
@@ -220,6 +229,7 @@ internal sealed class TapoP100Controller : IDisposable
         return _latestSessionCookie;
     }
 
+    // KLAP v2 규칙에 맞는 사용자 인증 해시를 만든다.
     private static byte[] GenerateKlapAuthHashV2(string username, string password)
     {
         byte[] userSha1 = SHA1.HashData(Encoding.UTF8.GetBytes(username));
@@ -227,6 +237,7 @@ internal sealed class TapoP100Controller : IDisposable
         return Sha256(userSha1, passSha1);
     }
 
+    // 여러 바이트 배열을 이어 SHA-256 해시를 계산한다.
     private static byte[] Sha256(params byte[][] parts)
     {
         using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
@@ -238,6 +249,7 @@ internal sealed class TapoP100Controller : IDisposable
         return hash.GetHashAndReset();
     }
 
+    // 암호화 서명과 payload 결합에 쓰는 공용 바이트 배열 결합 함수다.
     private static byte[] Combine(params byte[][] parts)
     {
         int totalLength = parts.Sum(static p => p.Length);
@@ -252,6 +264,7 @@ internal sealed class TapoP100Controller : IDisposable
         return buffer;
     }
 
+    // 오류 응답 본문이 텍스트인지 바이너리인지에 따라 보기 쉬운 문자열로 바꾼다.
     private static string TryDecodeResponseBody(byte[] responseBytes)
     {
         if (responseBytes.Length == 0)
@@ -269,6 +282,7 @@ internal sealed class TapoP100Controller : IDisposable
         }
     }
 
+    // 장치 JSON에 error_code가 있으면 성공 여부를 검사한다.
     private static void ThrowIfDeviceReturnedError(JsonElement element)
     {
         if (!element.TryGetProperty("error_code", out JsonElement errorCodeElement))
@@ -285,11 +299,13 @@ internal sealed class TapoP100Controller : IDisposable
         throw new InvalidOperationException($"Tapo device returned error_code={errorCode}: {element.GetRawText()}");
     }
 
+    // handshake1, handshake2 경로를 조합한다.
     private static string BuildKlapUri(string baseUri, string action)
     {
         return $"{baseUri}/app/{action}";
     }
 
+    // 암호화된 실제 명령 요청 경로를 조합한다.
     private static string BuildKlapRequestUri(string baseUri, int seq)
     {
         return $"{baseUri}/app/request?seq={seq}";
@@ -303,6 +319,7 @@ internal sealed class TapoP100Controller : IDisposable
         private int _sequence;
         private byte[]? _lastIv;
 
+        // 핸드셰이크 결과에서 AES 키, IV 시드, 서명 키를 파생한다.
         public KlapSession(byte[] localSeed, byte[] remoteSeed, byte[] userHash)
         {
             _key = Sha256(Encoding.ASCII.GetBytes("lsk"), localSeed, remoteSeed, userHash)[..16];
@@ -314,6 +331,7 @@ internal sealed class TapoP100Controller : IDisposable
             _signatureKey = Sha256(Encoding.ASCII.GetBytes("ldk"), localSeed, remoteSeed, userHash)[..28];
         }
 
+        // 평문 JSON 명령을 KLAP 요청 바이트로 암호화한다.
         public (byte[] Payload, int Sequence) Encrypt(string message)
         {
             _sequence++;
@@ -337,6 +355,7 @@ internal sealed class TapoP100Controller : IDisposable
             return (Combine(signature, ciphertext), _sequence);
         }
 
+        // 장치 응답 바이트를 복호화해 JSON 문자열로 되돌린다.
         public string Decrypt(byte[] payload)
         {
             if (_lastIv is null)
@@ -362,6 +381,7 @@ internal sealed class TapoP100Controller : IDisposable
             return Encoding.UTF8.GetString(plaintext);
         }
 
+        // 시퀀스를 반영한 CBC IV를 매 요청마다 생성한다.
         private byte[] BuildIv(int sequence)
         {
             byte[] iv = new byte[16];

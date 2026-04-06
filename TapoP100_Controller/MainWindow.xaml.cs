@@ -9,6 +9,7 @@ public partial class MainWindow : Window
 {
     private readonly P100ApiServer _apiServer;
 
+    // UI 이벤트와 외부 HTTP API를 같은 제어 경로로 묶어 초기화한다.
     public MainWindow()
     {
         InitializeComponent();
@@ -30,6 +31,7 @@ public partial class MainWindow : Window
         Closed += MainWindow_Closed;
     }
 
+    // 창이 뜰 때 기본 상태를 표시하고 8080 API 서버를 시작한다.
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         SyncPreview();
@@ -40,6 +42,7 @@ public partial class MainWindow : Window
         AppendLog("HTTP API ready: POST http://<this-pc-ip>:8080/p100_on or /p100_off");
     }
 
+    // 입력 중인 Tapo IP를 우측 상태 카드에 즉시 반영한다.
     private void SyncPreview()
     {
         TargetIpPreviewTextBlock.Text = string.IsNullOrWhiteSpace(IpAddressTextBox.Text)
@@ -47,6 +50,7 @@ public partial class MainWindow : Window
             : IpAddressTextBox.Text.Trim();
     }
 
+    // 현재 UI 입력값을 API 요청 DTO 형태로 정리한다.
     private ApiCommandRequest BuildRequestFromUi()
     {
         return new ApiCommandRequest(
@@ -55,6 +59,7 @@ public partial class MainWindow : Window
             PasswordInput.Password);
     }
 
+    // UI 또는 외부 API에서 들어온 ON/OFF 요청을 실제 플러그 제어로 실행한다.
     private async Task<ApiCommandResult> ExecutePlugCommandAsync(
         bool turnOn,
         ApiCommandRequest request,
@@ -131,6 +136,7 @@ public partial class MainWindow : Window
         }
     }
 
+    // 8080 HTTP API 요청을 UI 스레드의 동일한 제어 메서드로 연결한다.
     private async Task<ApiCommandResult> HandleApiRequestAsync(ApiHttpRequest request)
     {
         if (!string.Equals(request.Method, "POST", StringComparison.OrdinalIgnoreCase))
@@ -164,6 +170,7 @@ public partial class MainWindow : Window
         return new ApiCommandResult(false, "지원하지 않는 경로");
     }
 
+    // 제어 중에는 입력과 버튼을 잠가 중복 요청을 막는다.
     private void SetControlsEnabled(bool isEnabled)
     {
         IpAddressTextBox.IsEnabled = isEnabled;
@@ -173,6 +180,7 @@ public partial class MainWindow : Window
         PlugOffButton.IsEnabled = isEnabled;
     }
 
+    // 화면 로그 박스에 타임스탬프와 함께 메시지를 누적한다.
     private void AppendLog(string message)
     {
         string line = $"[{DateTime.Now:HH:mm:ss}] {message}";
@@ -189,6 +197,7 @@ public partial class MainWindow : Window
         LogTextBox.ScrollToEnd();
     }
 
+    // 창 종료 시 외부 HTTP API 서버를 함께 정리한다.
     private void MainWindow_Closed(object? sender, EventArgs e)
     {
         _apiServer.Dispose();

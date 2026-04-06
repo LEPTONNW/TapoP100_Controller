@@ -19,6 +19,7 @@ internal sealed class P100ApiServer : IDisposable
     private TcpListener? _listener;
     private bool _disposed;
 
+    // 외부 제어를 위한 경량 HTTP 서버를 준비한다.
     public P100ApiServer(int port, Func<ApiHttpRequest, Task<ApiCommandResult>> handler, Action<string>? log = null)
     {
         _port = port;
@@ -26,6 +27,7 @@ internal sealed class P100ApiServer : IDisposable
         _log = log;
     }
 
+    // 지정한 포트에서 HTTP 수신 대기를 시작한다.
     public void Start()
     {
         if (_disposed || _listener is not null)
@@ -38,6 +40,7 @@ internal sealed class P100ApiServer : IDisposable
         _ = Task.Run(() => AcceptLoopAsync(_cts.Token));
     }
 
+    // 수신 루프와 리스너를 중지하고 자원을 해제한다.
     public void Dispose()
     {
         if (_disposed)
@@ -51,6 +54,7 @@ internal sealed class P100ApiServer : IDisposable
         _cts.Dispose();
     }
 
+    // 새 TCP 연결을 계속 받아 개별 요청 처리 작업으로 넘긴다.
     private async Task AcceptLoopAsync(CancellationToken cancellationToken)
     {
         try
@@ -73,6 +77,7 @@ internal sealed class P100ApiServer : IDisposable
         }
     }
 
+    // 단일 HTTP 요청을 읽고 JSON을 파싱한 뒤 상위 핸들러로 전달한다.
     private async Task HandleClientAsync(TcpClient client, CancellationToken cancellationToken)
     {
         await using NetworkStream stream = client.GetStream();
@@ -156,6 +161,7 @@ internal sealed class P100ApiServer : IDisposable
         }
     }
 
+    // 처리 결과를 단순 텍스트 HTTP 응답으로 반환한다.
     private static async Task WriteResponseAsync(NetworkStream stream, int statusCode, string message, CancellationToken cancellationToken)
     {
         string reasonPhrase = statusCode switch
